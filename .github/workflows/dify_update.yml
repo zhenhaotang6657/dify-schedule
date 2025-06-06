@@ -4,6 +4,8 @@ on:
   # 使用 cron 表达式设置定时触发，北京时间 9:00 = UTC 时间 1:00
   schedule:
     - cron: '0 1 * * *'  # UTC 时间每天凌晨 1 点，即北京时间 9 点
+  workflow_dispatch:
+
 
 jobs:
   trigger-dify-workflow:
