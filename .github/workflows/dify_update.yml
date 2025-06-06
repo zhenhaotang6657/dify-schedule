@@ -1,40 +1,71 @@
-name: Dify 工作流每日定时执行
+name: Dify Workflow Automation
 
 on:
-  # 使用 cron 表达式设置定时触发，北京时间 9:00 = UTC 时间 1:00
   schedule:
-    - cron: '0 1 * * *'  # UTC 时间每天凌晨 1 点，即北京时间 9 点
-  workflow_dispatch:
+    - cron: "0 1 * * *" # 北京时间上午09:00（UTC 01:00）
+  workflow_dispatch: # 支持手动触发
 
+env:
+  DIFY_API_KEY: ${{ secrets.DIFY_API_KEY }}
+  DIFY_BASE_URL: ${{ secrets.DIFY_BASE_URL }}
+  DIFY_WORKFLOW_ID: ${{ secrets.DIFY_WORKFLOW_ID }}
 
 jobs:
   trigger-dify-workflow:
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # 设置任务超时时间，避免长时间挂起
-    
     steps:
+      - name: 检出代码
+        uses: actions/checkout@v3
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: 安装依赖
+        run: |
+          npm install axios
+
       - name: 触发 Dify 工作流
         run: |
-          # 发送 HTTP 请求触发 Dify 工作流
-          response=$(curl -s -w "%{http_code}" -X POST \
-            "${{ secrets.DIFY_BASE_URL }}/workflow/trigger" \
-            -H "Authorization: Bearer ${{ secrets.DIFY_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d '{"workflow_id": "${{ secrets.DIFY_WORKFLOW_ID }}", "parameters": {}}' \
-            -o response.json)
+          node <<EOF
+          const axios = require('axios');
           
-          # 检查响应状态码
-          if [ "$response" -eq 200 ]; then
-            echo "Dify 工作流触发成功"
-            cat response.json
-          else
-            echo "Dify 工作流触发失败，状态码: $response"
-            cat response.json
-            exit 1  # 失败时退出，标记任务为失败
-          fi
+          async function triggerWorkflow() {
+            try {
+              const response = await axios.post(
+                \`\${process.env.DIFY_BASE_URL}/workflow/trigger\`,
+                {
+                  workflow_id: process.env.DIFY_WORKFLOW_ID,
+                  parameters: {} // 可根据需要添加参数
+                },
+                {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': \`Bearer \${process.env.DIFY_API_KEY}\`
+                  }
+                }
+              );
+              
+              console.log('工作流触发成功:', response.data);
+              return response.data;
+            } catch (error) {
+              console.error('工作流触发失败:', error.message);
+              if (error.response) {
+                console.error('状态码:', error.response.status);
+                console.error('错误详情:', error.response.data);
+              }
+              throw error;
+            }
+          }
           
-        # 设置重试机制，避免网络波动导致的失败
-        continue-on-error: false
-        retry:
-          max-attempts: 3  # 最多重试 3 次
-          delay: 10  # 每次重试间隔 10 秒
+          triggerWorkflow()
+            .then(data => {
+              console.log('Dify 工作流执行成功');
+              process.exit(0);
+            })
+            .catch(error => {
+              console.error('Dify 工作流执行失败:', error);
+              process.exit(1);
+            });
+          EOF
